@@ -283,9 +283,9 @@ impl Area {
                 UserData: 0,
                 Density: 0.0,
                 HalfExtent: Vec3::new(
-                    Chunk::SIZE_X * 0.5,
+                    Chunk::SIZE_X * 0.5 + 10.0,
                     Chunk::SIZE_Y * 0.5,
-                    Chunk::SIZE_Z * 0.5,
+                    Chunk::SIZE_Z * 0.5 + 10.0,
                 )
                 .into_jolt(),
                 ConvexRadius: 0.0,

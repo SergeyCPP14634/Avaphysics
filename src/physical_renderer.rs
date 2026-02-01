@@ -210,7 +210,7 @@ mod vs_bodies {
 
                 gl_Position.y = -gl_Position.y;
 
-                position_out = position_in;
+                position_out = vec3(render_body_data.model * vec4(position_in, 1.0));
 
                 texture_position_out = texture_position_in;
 
@@ -228,43 +228,53 @@ mod fs_bodies {
         src: r"
             #version 450
 
-layout(set = 0, binding = 2) uniform sampler2D texture_body;
+            layout(set = 0, binding = 0) uniform CameraData
+            {
+                mat4 projection;
+                mat4 view;
 
-layout(location = 0) in vec3 position_in;
-layout(location = 1) in vec3 texture_position_in;
-layout(location = 2) in vec3 normal_in;
-layout(location = 3) in vec3 color_in;
+                vec4 position_camera;
+            } camera_data;
 
-layout(location = 0) out vec4 color_out;
+            layout(set = 0, binding = 2) uniform sampler2D texture_body;
 
-void main()
-{
-    // Статическое направление света (в том же пространстве, что и normal_in)
-    const vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0)); // можно изменить
+            layout(location = 0) in vec3 position_in;
+            layout(location = 1) in vec3 texture_position_in;
+            layout(location = 2) in vec3 normal_in;
+            layout(location = 3) in vec3 color_in;
 
-    // Нормализуем входную нормаль
-    vec3 normal = normalize(normal_in);
+            layout(location = 0) out vec4 color_out;
 
-    // Диффузный коэффициент (clamp к [0, 1])
-    float diffuse = max(dot(normal, lightDir), 0.0);
+            const vec3 accent = vec3(0.5);
 
-    // Получаем базовый цвет объекта
-    vec3 color_object = vec3(1.0, 1.0, 1.0);
+            void main()
+            {
+                const vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
 
-    if (texture_position_in.x >= 0.0 && texture_position_in.y >= 0.0)
-    {
-        color_object = texture(texture_body, vec2(texture_position_in.x, 1.0 + texture_position_in.y * -1.0)).rgb;
-    }
-    else if (color_in.r >= 0.0 && color_in.g >= 0.0 && color_in.b >= 0.0)
-    {
-        color_object = color_in.rgb;
-    }
+                vec3 normal = normalize(normal_in);
 
-    // Применяем диффузное освещение
-    vec3 final_color = color_object * diffuse;
+                float diffuse = max(dot(normal, lightDir), 0.0);
 
-    color_out = vec4(final_color, 1.0);
-}
+                vec3 viewDir = normalize(camera_data.position_camera.xyz - position_in);
+                vec3 reflectDir = reflect(-lightDir, normal);
+                float spec = pow(max(dot(viewDir, reflectDir), 0.0), 8.0);
+                vec3 specular = vec3(1.0) * spec;
+
+                vec3 color_object = vec3(1.0, 1.0, 1.0);
+
+                if (texture_position_in.x >= 0.0 && texture_position_in.y >= 0.0)
+                {
+                    color_object = texture(texture_body, vec2(texture_position_in.x, 1.0 + texture_position_in.y * -1.0)).rgb;
+                }
+                else if (color_in.r >= 0.0 && color_in.g >= 0.0 && color_in.b >= 0.0)
+                {
+                    color_object = color_in.rgb;
+                }
+
+                vec3 final_color = color_object * diffuse + specular + color_object * accent;
+
+                color_out = vec4(final_color, 1.0);
+            }
         "
     }
 }
@@ -814,7 +824,7 @@ impl PhysicalRenderer {
                 BindingSet {
                     binding: 0,
                     descriptor_type: DescriptorType::Uniform,
-                    shader_stages: vec![ShaderStage::Vertex],
+                    shader_stages: vec![ShaderStage::Vertex, ShaderStage::Fragment],
                 },
                 BindingSet {
                     binding: 1,
