@@ -1,90 +1,50 @@
 use crate::body::{Body as AvaBody, BodyType};
-use joltc_sys::*;
 use nalgebra_glm as glm;
-use rolt::{
-    BodyId, BroadPhaseLayer, BroadPhaseLayerInterface, FromJolt, IntoJolt, ObjectLayer,
-    ObjectLayerPairFilter, ObjectVsBroadPhaseLayerFilter, PhysicsSystem, Quat, RVec3, Vec3,
-    factory_delete, factory_init, register_default_allocator, register_types, unregister_types,
-};
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::ptr;
-
-const OL_NON_MOVING: u16 = 0;
-const OL_MOVING: u16 = 1;
-
-const BPL_NON_MOVING: u8 = 0;
-const BPL_MOVING: u8 = 1;
+use rapier3d::prelude::*;
+use std::collections::{HashMap, HashSet};
 
 const FIXED_TIMESTEP: f32 = 0.005;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ChunkCoord {
-    pub x: i64,
-    pub z: i64,
+    pub x: i32,
+    pub z: i32,
 }
 
 pub struct Chunk {
     pub coord: ChunkCoord,
-    pub body_id: BodyId,
+    pub collider_handle: ColliderHandle,
 }
 
 impl Chunk {
-    const SIZE_X: u32 = 50;
-    const SIZE_Y: u32 = 10;
-    const SIZE_Z: u32 = 50;
-    const THRESHOLD: u32 = 10;
-    const OVERLAP: u32 = 0;
+    const SIZE_X: f32 = 50.0;
+    const SIZE_Y: f32 = 1.0;
+    const SIZE_Z: f32 = 50.0;
+    const THRESHOLD: f32 = 10.0;
+    const OVERLAP: f32 = 0.05;
 
-    fn new(coord: ChunkCoord, body_id: BodyId) -> Self {
-        Self { coord, body_id }
+    fn new(coord: ChunkCoord, collider_handle: ColliderHandle) -> Self {
+        Self {
+            coord,
+            collider_handle,
+        }
     }
 
     fn chunk_coord(pos: glm::Vec3) -> ChunkCoord {
         ChunkCoord {
-            x: (pos.x / Self::SIZE_X as f32).floor() as i64,
-            z: (pos.z / Self::SIZE_Z as f32).floor() as i64,
+            x: (pos.x / Self::SIZE_X).floor() as i32,
+            z: (pos.z / Self::SIZE_Z).floor() as i32,
         }
     }
 
     fn position(coord: &ChunkCoord) -> glm::Vec3 {
+        let step_x = Self::SIZE_X - 2.0 * Self::OVERLAP;
+        let step_z = Self::SIZE_Z - 2.0 * Self::OVERLAP;
         glm::vec3(
-            coord.x as f32 * Self::SIZE_X as f32 + Self::SIZE_X as f32 * 0.5,
-            -(Self::SIZE_Y as f32) * 0.5,
-            coord.z as f32 * Self::SIZE_Z as f32 + Self::SIZE_Z as f32 * 0.5,
+            coord.x as f32 * step_x + Self::SIZE_X * 0.5,
+            -Self::SIZE_Y * 0.5,
+            coord.z as f32 * step_z + Self::SIZE_Z * 0.5,
         )
-    }
-}
-
-struct MyBroadPhaseLayerInterface;
-
-impl BroadPhaseLayerInterface for MyBroadPhaseLayerInterface {
-    fn get_num_broad_phase_layers(&self) -> u32 {
-        2
-    }
-
-    fn get_broad_phase_layer(&self, layer: ObjectLayer) -> BroadPhaseLayer {
-        match layer.raw() {
-            OL_NON_MOVING => BroadPhaseLayer::new(BPL_NON_MOVING),
-            OL_MOVING => BroadPhaseLayer::new(BPL_MOVING),
-            _ => unreachable!("Invalid object layer"),
-        }
-    }
-}
-
-struct MyObjectVsBroadPhase;
-
-impl ObjectVsBroadPhaseLayerFilter for MyObjectVsBroadPhase {
-    fn should_collide(&self, _layer: ObjectLayer, _broad_phase: BroadPhaseLayer) -> bool {
-        true
-    }
-}
-
-struct MyObjectLayerPair;
-
-impl ObjectLayerPairFilter for MyObjectLayerPair {
-    fn should_collide(&self, _layer1: ObjectLayer, _layer2: ObjectLayer) -> bool {
-        true
     }
 }
 
@@ -96,48 +56,28 @@ pub struct Area {
     pub current_friction: f32,
     accumulator: f32,
     is_simulating: bool,
-    physics_system: PhysicsSystem,
-    temp_allocator: *mut JPC_TempAllocatorImpl,
-    job_system: *mut JPC_JobSystemThreadPool,
-    rolt_body_ids: Vec<BodyId>,
+    rigid_body_set: RigidBodySet,
+    collider_set: ColliderSet,
+    physics_pipeline: PhysicsPipeline,
+    integration_parameters: IntegrationParameters,
+    body_handles: Vec<RigidBodyHandle>,
     chunks: HashMap<ChunkCoord, Chunk>,
+    island_manager: IslandManager,
+    broad_phase: BroadPhaseBvh,
+    narrow_phase: NarrowPhase,
+    impulse_joint_set: ImpulseJointSet,
+    multibody_joint_set: MultibodyJointSet,
+    ccd_solver: CCDSolver,
 }
 
-impl Area {
-    pub fn new() -> Result<Self, String> {
-        register_default_allocator();
-        factory_init();
-        register_types();
-
-        let mut physics_system = PhysicsSystem::new();
-
-        physics_system.init(
-            1024,
-            0,
-            256,
-            1024,
-            MyBroadPhaseLayerInterface,
-            MyObjectVsBroadPhase,
-            MyObjectLayerPair,
-        );
-
-        let temp_allocator = unsafe { JPC_TempAllocatorImpl_new(10 * 1024 * 1024) };
-        if temp_allocator.is_null() {
-            return Err("Failed to create temp allocator".to_string());
-        }
-
-        let job_system = unsafe {
-            JPC_JobSystemThreadPool_new2(
-                JPC_MAX_PHYSICS_JOBS as u32,
-                JPC_MAX_PHYSICS_BARRIERS as u32,
-            )
+impl Default for Area {
+    fn default() -> Self {
+        let integration_parameters = IntegrationParameters {
+            dt: FIXED_TIMESTEP,
+            ..Default::default()
         };
-        if job_system.is_null() {
-            unsafe { JPC_TempAllocatorImpl_delete(temp_allocator) };
-            return Err("Failed to create job system".to_string());
-        }
 
-        Ok(Self {
+        Self {
             bodies: Vec::new(),
             name_bodies: HashSet::new(),
             current_time: 0.0,
@@ -145,12 +85,91 @@ impl Area {
             current_friction: 0.2,
             accumulator: 0.0,
             is_simulating: false,
-            physics_system,
-            temp_allocator,
-            job_system,
-            rolt_body_ids: Vec::new(),
+            rigid_body_set: RigidBodySet::new(),
+            collider_set: ColliderSet::new(),
+            physics_pipeline: PhysicsPipeline::new(),
+            integration_parameters,
+            body_handles: Vec::new(),
             chunks: HashMap::new(),
-        })
+            island_manager: IslandManager::new(),
+            broad_phase: BroadPhaseBvh::new(),
+            narrow_phase: NarrowPhase::new(),
+            impulse_joint_set: ImpulseJointSet::new(),
+            multibody_joint_set: MultibodyJointSet::new(),
+            ccd_solver: CCDSolver::new(),
+        }
+    }
+}
+
+impl Area {
+    pub fn new() -> Result<Self, String> {
+        Ok(Self::default())
+    }
+
+    fn create_rigid_body_builder(phys: &crate::body::PhysicalBody) -> RigidBodyBuilder {
+        if phys.is_kinematic {
+            RigidBodyBuilder::kinematic_position_based()
+        } else {
+            RigidBodyBuilder::dynamic()
+                .gravity_scale(1.0)
+                .ccd_enabled(true)
+        }
+    }
+
+    fn create_collider_builder(shape: SharedShape, friction: f32, mass: f32) -> ColliderBuilder {
+        let volume = if let Some(ball) = shape.as_ball() {
+            let r = ball.radius;
+            (4.0 / 3.0) * std::f32::consts::PI * r * r * r
+        } else if let Some(cuboid) = shape.as_cuboid() {
+            let half_extents = cuboid.half_extents;
+            8.0 * half_extents.x * half_extents.y * half_extents.z
+        } else {
+            1.0
+        };
+
+        let density = mass / volume;
+
+        ColliderBuilder::new(shape)
+            .density(density)
+            .friction(friction)
+            .restitution(0.0)
+    }
+
+    fn add_chunk_neighbors(
+        needed_coords: &mut HashSet<ChunkCoord>,
+        chunk_coord: ChunkCoord,
+        local_pos: f32,
+        axis_threshold: f32,
+        is_x_axis: bool,
+    ) {
+        if local_pos > axis_threshold - Chunk::THRESHOLD {
+            let neighbor = if is_x_axis {
+                ChunkCoord {
+                    x: chunk_coord.x + 1,
+                    z: chunk_coord.z,
+                }
+            } else {
+                ChunkCoord {
+                    x: chunk_coord.x,
+                    z: chunk_coord.z + 1,
+                }
+            };
+            needed_coords.insert(neighbor);
+        }
+        if local_pos < Chunk::THRESHOLD {
+            let neighbor = if is_x_axis {
+                ChunkCoord {
+                    x: chunk_coord.x - 1,
+                    z: chunk_coord.z,
+                }
+            } else {
+                ChunkCoord {
+                    x: chunk_coord.x,
+                    z: chunk_coord.z - 1,
+                }
+            };
+            needed_coords.insert(neighbor);
+        }
     }
 
     pub fn add_body(&mut self, body: AvaBody) -> Result<(), String> {
@@ -164,167 +183,66 @@ impl Area {
             return Err("Texture path is empty".to_string());
         }
 
-        self.name_bodies.insert(body.render_body.name.clone());
-        self.bodies.push(body.clone());
+        let shape = Self::create_shape_for_body(rend)?;
+        let friction = phys.edit_params.friction;
+        let rb_builder = Self::create_rigid_body_builder(phys);
+        let pos = phys.position;
+        let vel = phys.velocity;
+        let mass = phys.mass;
 
-        let new_phys = &mut self
-            .bodies
-            .last_mut()
-            .ok_or("Failed to add body")?
-            .physical_body;
+        self.name_bodies.insert(rend.name.clone());
+        self.bodies.push(body);
 
-        let shape_ptr = Self::create_shape_for_body(phys, rend)?;
-        if shape_ptr.is_null() {
-            self.bodies.pop();
-            return Err("Failed to create physics shape".to_string());
+        let rb_handle = self
+            .rigid_body_set
+            .insert(rb_builder.translation(Vec3::new(pos.x, pos.y, pos.z)));
+
+        let collider_builder = Self::create_collider_builder(shape, friction, mass);
+        self.collider_set
+            .insert_with_parent(collider_builder, rb_handle, &mut self.rigid_body_set);
+        self.body_handles.push(rb_handle);
+
+        if let Some(rb) = self.rigid_body_set.get_mut(rb_handle) {
+            rb.set_linvel(Vec3::new(vel.x, vel.y, vel.z), true);
         }
 
-        let motion_type = if new_phys.is_kinematic {
-            JPC_MOTION_TYPE_KINEMATIC
-        } else {
-            JPC_MOTION_TYPE_DYNAMIC
-        };
-
-        let body_interface = self.physics_system.body_interface();
-        let created_body = unsafe {
-            body_interface.create_body(&JPC_BodyCreationSettings {
-                Position: RVec3::new(
-                    new_phys.position.x,
-                    new_phys.position.y,
-                    new_phys.position.z,
-                )
-                .into_jolt(),
-                Rotation: Quat::from_xyzw(0.0, 0.0, 0.0, 1.0).into_jolt(),
-                MotionType: motion_type,
-                ObjectLayer: OL_MOVING,
-                Shape: shape_ptr,
-                LinearVelocity: Vec3::new(
-                    new_phys.velocity.x,
-                    new_phys.velocity.y,
-                    new_phys.velocity.z,
-                )
-                .into_jolt(),
-                AllowSleeping: false,
-                GravityFactor: 0.0,
-                LinearDamping: 0.0,
-                Restitution: 1.0,
-                Friction: body.physical_body.edit_params.friction,
-                ..Default::default()
-            })
-        };
-
-        let body_id = created_body.id();
-        body_interface.add_body(body_id, JPC_ACTIVATION_ACTIVATE);
-        self.rolt_body_ids.push(body_id);
-
         self.update_time(0.0)?;
-
         Ok(())
     }
 
-    fn create_shape_for_body(
-        physical_body: &crate::body::PhysicalBody,
-        render_body: &crate::body::RenderBody,
-    ) -> Result<*mut JPC_Shape, String> {
-        unsafe {
-            let mut shape = ptr::null_mut();
-            let mut error = ptr::null_mut();
-
-            let success = match render_body.body_type {
-                BodyType::Sphere => {
-                    let radius = render_body.dimensions.x;
-                    let volume = 4.0 / 3.0 * std::f32::consts::PI * (radius * radius * radius);
-                    let density = if volume > 0.0 {
-                        physical_body.mass / volume
-                    } else {
-                        0.0
-                    };
-
-                    let settings = JPC_SphereShapeSettings {
-                        UserData: 0,
-                        Density: density,
-                        Radius: render_body.dimensions.x,
-                    };
-                    JPC_SphereShapeSettings_Create(&settings, &mut shape, &mut error)
-                }
-                BodyType::Rectangle => {
-                    let half = render_body.dimensions;
-                    let volume = 8.0 * (half.x * half.y * half.z);
-                    let density = if volume > 0.0 {
-                        physical_body.mass / volume
-                    } else {
-                        0.0
-                    };
-
-                    let settings = JPC_BoxShapeSettings {
-                        UserData: 0,
-                        Density: density,
-                        HalfExtent: Vec3::new(
-                            render_body.dimensions.x,
-                            render_body.dimensions.y,
-                            render_body.dimensions.z,
-                        )
-                        .into_jolt(),
-                        ConvexRadius: 0.0,
-                        ..Default::default()
-                    };
-                    JPC_BoxShapeSettings_Create(&settings, &mut shape, &mut error)
-                }
-            };
-
-            if success {
-                Ok(shape)
-            } else {
-                Err("Failed to create physics shape".to_string())
+    fn create_shape_for_body(render_body: &crate::body::RenderBody) -> Result<SharedShape, String> {
+        match render_body.body_type {
+            BodyType::Sphere => {
+                let radius = render_body.dimensions.x;
+                Ok(SharedShape::ball(radius))
+            }
+            BodyType::Rectangle => {
+                let half = render_body.dimensions;
+                Ok(SharedShape::cuboid(half.x, half.y, half.z))
             }
         }
     }
 
-    fn create_chunk_body(
-        physics_system: &PhysicsSystem,
+    fn create_chunk_collider(
+        collider_set: &mut ColliderSet,
+        rigid_body_set: &mut RigidBodySet,
         coord: &ChunkCoord,
-        current_friction: f32,
-    ) -> Result<BodyId, String> {
-        let ground_shape = unsafe {
-            let settings = JPC_BoxShapeSettings {
-                UserData: 0,
-                Density: 0.0,
-                HalfExtent: Vec3::new(
-                    Chunk::SIZE_X as f32 * 0.5 + Chunk::OVERLAP as f32,
-                    Chunk::SIZE_Y as f32 * 0.5,
-                    Chunk::SIZE_Z as f32 * 0.5 + Chunk::OVERLAP as f32,
-                )
-                .into_jolt(),
-                ConvexRadius: 0.0,
-                ..Default::default()
-            };
-            let mut shape = ptr::null_mut();
-            let mut error = ptr::null_mut();
-            if !JPC_BoxShapeSettings_Create(&settings, &mut shape, &mut error) {
-                return Err("Failed to create chunk shape".to_string());
-            }
-            shape
-        };
-
+        friction: f32,
+    ) -> Result<ColliderHandle, String> {
         let position = Chunk::position(coord);
-        let body_interface = physics_system.body_interface();
-        let ground_body = unsafe {
-            body_interface.create_body(&JPC_BodyCreationSettings {
-                Position: RVec3::new(position.x, position.y, position.z).into_jolt(),
-                Rotation: Quat::from_xyzw(0.0, 0.0, 0.0, 1.0).into_jolt(),
-                MotionType: JPC_MOTION_TYPE_STATIC,
-                ObjectLayer: OL_NON_MOVING,
-                Shape: ground_shape,
-                GravityFactor: 0.0,
-                LinearDamping: 0.0,
-                Friction: current_friction,
-                ..Default::default()
-            })
-        };
+        let ground_shape = SharedShape::cuboid(
+            Chunk::SIZE_X * 0.5 + Chunk::OVERLAP,
+            Chunk::SIZE_Y * 0.5,
+            Chunk::SIZE_Z * 0.5 + Chunk::OVERLAP,
+        );
 
-        let body_id = ground_body.id();
-        body_interface.add_body(body_id, JPC_ACTIVATION_DONT_ACTIVATE);
-        Ok(body_id)
+        let ground_rb =
+            RigidBodyBuilder::fixed().translation(Vec3::new(position.x, position.y, position.z));
+
+        let rb_handle = rigid_body_set.insert(ground_rb);
+        let collider = Self::create_collider_builder(ground_shape, friction, 0.0);
+        let handle = collider_set.insert_with_parent(collider, rb_handle, rigid_body_set);
+        Ok(handle)
     }
 
     fn update_chunks(&mut self) -> Result<(), String> {
@@ -339,41 +257,52 @@ impl Area {
             let chunk_coord = Chunk::chunk_coord(pos);
             needed_coords.insert(chunk_coord);
 
-            let local_x = pos.x - (chunk_coord.x as f32 * Chunk::SIZE_X as f32);
-            let local_z = pos.z - (chunk_coord.z as f32 * Chunk::SIZE_Z as f32);
+            let local_x = pos.x - (chunk_coord.x as f32 * (Chunk::SIZE_X - 2.0 * Chunk::OVERLAP));
+            let local_z = pos.z - (chunk_coord.z as f32 * (Chunk::SIZE_Z - 2.0 * Chunk::OVERLAP));
 
-            if local_x > Chunk::SIZE_X as f32 - Chunk::THRESHOLD as f32 {
-                needed_coords.insert(ChunkCoord {
-                    x: chunk_coord.x + 1,
-                    z: chunk_coord.z,
-                });
-            }
-            if local_x < Chunk::THRESHOLD as f32 {
-                needed_coords.insert(ChunkCoord {
-                    x: chunk_coord.x - 1,
-                    z: chunk_coord.z,
-                });
-            }
-            if local_z > Chunk::SIZE_Z as f32 - Chunk::THRESHOLD as f32 {
-                needed_coords.insert(ChunkCoord {
-                    x: chunk_coord.x,
-                    z: chunk_coord.z + 1,
-                });
-            }
-            if local_z < Chunk::THRESHOLD as f32 {
-                needed_coords.insert(ChunkCoord {
-                    x: chunk_coord.x,
-                    z: chunk_coord.z - 1,
-                });
+            Self::add_chunk_neighbors(
+                &mut needed_coords,
+                chunk_coord,
+                local_x,
+                Chunk::SIZE_X,
+                true,
+            );
+            Self::add_chunk_neighbors(
+                &mut needed_coords,
+                chunk_coord,
+                local_z,
+                Chunk::SIZE_Z,
+                false,
+            );
+        }
+
+        let to_remove: Vec<_> = self
+            .chunks
+            .keys()
+            .filter(|c| !needed_coords.contains(c))
+            .cloned()
+            .collect();
+        for coord in to_remove {
+            if let Some(chunk) = self.chunks.remove(&coord) {
+                self.collider_set.remove(
+                    chunk.collider_handle,
+                    &mut self.island_manager,
+                    &mut self.rigid_body_set,
+                    true,
+                );
             }
         }
 
-        needed_coords.retain(|coord| !self.chunks.contains_key(coord));
-
         for coord in needed_coords {
-            let body_id =
-                Self::create_chunk_body(&self.physics_system, &coord, self.current_friction)?;
-            self.chunks.insert(coord, Chunk::new(coord, body_id));
+            if !self.chunks.contains_key(&coord) {
+                let handle = Self::create_chunk_collider(
+                    &mut self.collider_set,
+                    &mut self.rigid_body_set,
+                    &coord,
+                    self.current_friction,
+                )?;
+                self.chunks.insert(coord, Chunk::new(coord, handle));
+            }
         }
 
         Ok(())
@@ -382,91 +311,94 @@ impl Area {
     pub fn update_physics(&mut self) -> Result<(), String> {
         self.update_chunks()?;
 
-        let body_interface = self.physics_system.body_interface();
-
         for (i, body) in self.bodies.iter().enumerate() {
-            let phys = &body.physical_body;
-
-            if let Some(&body_id) = self.rolt_body_ids.get(i)
-                && !phys.is_kinematic
+            if let Some(rb_handle) = self.body_handles.get(i)
+                && let Some(rb) = self.rigid_body_set.get_mut(*rb_handle)
+                && !body.physical_body.is_kinematic
             {
-                let external_force = Vec3::new(phys.force.x, phys.force.y, phys.force.z);
-                let gravity_force = Vec3::new(0.0, phys.mass * self.current_gravity, 0.0);
-                let total_force = external_force + gravity_force;
-
-                unsafe {
-                    JPC_BodyInterface_AddForce(
-                        body_interface.as_raw(),
-                        body_id.raw(),
-                        total_force.into_jolt(),
-                    );
-                }
+                let force = body.physical_body.force;
+                let external_force = Vec3::new(force.x, force.y, force.z);
+                rb.reset_forces(true);
+                rb.add_force(external_force, true);
             }
         }
 
-        unsafe {
-            self.physics_system
-                .update(FIXED_TIMESTEP, 1, self.temp_allocator, self.job_system);
-        }
+        self.physics_pipeline.step(
+            Vec3::new(0.0, self.current_gravity, 0.0),
+            &self.integration_parameters,
+            &mut self.island_manager,
+            &mut self.broad_phase,
+            &mut self.narrow_phase,
+            &mut self.rigid_body_set,
+            &mut self.collider_set,
+            &mut self.impulse_joint_set,
+            &mut self.multibody_joint_set,
+            &mut self.ccd_solver,
+            &(),
+            &(),
+        );
 
         self.sync_physics_to_bodies()?;
-
         self.current_time += FIXED_TIMESTEP;
         Ok(())
     }
 
     fn sync_physics_to_bodies(&mut self) -> Result<(), String> {
-        let body_interface = self.physics_system.body_interface();
+        for (i, body) in self.bodies.iter_mut().enumerate() {
+            if let Some(rb_handle) = self.body_handles.get(i)
+                && let Some(rb) = self.rigid_body_set.get(*rb_handle)
+            {
+                let pos = rb.translation();
+                let rot = rb.rotation();
+                let vel = rb.linvel();
 
-        for (body, &body_id) in self.bodies.iter_mut().zip(self.rolt_body_ids.iter()) {
-            let phys = &mut body.physical_body;
+                body.physical_body.position = glm::vec3(pos.x, pos.y, pos.z);
+                body.physical_body.velocity = glm::vec3(vel.x, vel.y, vel.z);
+                body.render_body.rotation = glm::quat(rot.x, rot.y, rot.z, rot.w);
 
-            let rot =
-                unsafe { JPC_BodyInterface_GetRotation(body_interface.as_raw(), body_id.raw()) };
+                let prev_vel = body.physical_body.edit_params.velocity;
+                let dt = if self.current_time > 1e-6 {
+                    self.current_time
+                } else {
+                    FIXED_TIMESTEP
+                };
+                body.physical_body.acceleration = (body.physical_body.velocity - prev_vel) / dt;
 
-            let rot_quat = Quat::from_jolt(rot);
-            body.render_body.rotation = glm::quat(rot_quat.x, rot_quat.y, rot_quat.z, rot_quat.w);
+                body.physical_body.gravity_force =
+                    glm::vec3(0.0, body.physical_body.mass * self.current_gravity, 0.0);
+                let total_force = body.physical_body.force + body.physical_body.gravity_force;
+                body.physical_body.net_force = glm::length(&total_force);
 
-            let pos = body_interface.center_of_mass_position(body_id);
-            let vel = unsafe {
-                JPC_BodyInterface_GetLinearVelocity(body_interface.as_raw(), body_id.raw())
-            };
-            let vel_vec = Vec3::from_jolt(vel);
+                body.physical_body.momentum = body.physical_body.mass * body.physical_body.velocity;
+                body.physical_body.kinetic_energy = 0.5
+                    * body.physical_body.mass
+                    * glm::dot(&body.physical_body.velocity, &body.physical_body.velocity);
+                body.physical_body.potential_energy =
+                    body.physical_body.mass * self.current_gravity * body.physical_body.position.y;
+                body.physical_body.total_mechanical_energy =
+                    body.physical_body.kinetic_energy + body.physical_body.potential_energy;
 
-            phys.position = glm::vec3(pos.x, pos.y, pos.z);
-            phys.velocity = glm::vec3(vel_vec.x, vel_vec.y, vel_vec.z);
+                let distance_vec = body.physical_body.velocity * FIXED_TIMESTEP;
+                body.physical_body.displacement =
+                    body.physical_body.position - body.physical_body.edit_params.position;
+                body.physical_body.distance += glm::length(&distance_vec);
 
-            phys.acceleration = (phys.velocity - phys.edit_params.velocity) / self.current_time;
+                let work = glm::dot(&total_force, &distance_vec);
+                body.physical_body.work += work;
+                body.physical_body.power = work / FIXED_TIMESTEP;
+                body.physical_body.impulse = total_force * FIXED_TIMESTEP;
 
-            phys.gravity_force = glm::vec3(0.0, phys.mass * self.current_gravity, 0.0);
-            let total_force_vector = phys.force + phys.gravity_force;
-            phys.net_force = glm::length(&total_force_vector);
+                if body.physical_body.is_kinematic || body.physical_body.position.y <= 0.0 {
+                    body.physical_body.normal_force =
+                        glm::vec3(0.0, -body.physical_body.gravity_force.y, 0.0);
+                } else {
+                    body.physical_body.normal_force = glm::vec3(0.0, 0.0, 0.0);
+                }
 
-            phys.momentum = phys.mass * phys.velocity;
-            phys.kinetic_energy = 0.5 * phys.mass * glm::dot(&phys.velocity, &phys.velocity);
-            phys.potential_energy = phys.mass * self.current_gravity * phys.position.y;
-            phys.total_mechanical_energy = phys.kinetic_energy + phys.potential_energy;
-
-            let distance = phys.velocity * FIXED_TIMESTEP;
-            phys.displacement = phys.position - phys.edit_params.position;
-            phys.distance += glm::length(&distance);
-
-            let work = glm::dot(&total_force_vector, &distance);
-            phys.work += work;
-            phys.power = work / FIXED_TIMESTEP;
-
-            phys.impulse = total_force_vector * FIXED_TIMESTEP;
-
-            if phys.is_kinematic || phys.position.y <= 0.0 {
-                phys.normal_force = glm::vec3(0.0, -phys.gravity_force.y, 0.0);
-            } else {
-                phys.normal_force = glm::vec3(0.0, 0.0, 0.0);
+                body.physical_body.friction_force = glm::vec3(0.0, 0.0, 0.0);
+                body.physical_body.elastic_force = glm::vec3(0.0, 0.0, 0.0);
             }
-
-            phys.friction_force = glm::vec3(0.0, 0.0, 0.0);
-            phys.elastic_force = glm::vec3(0.0, 0.0, 0.0);
         }
-
         Ok(())
     }
 
@@ -503,16 +435,20 @@ impl Area {
         self.current_time = 0.0;
         self.is_simulating = false;
 
-        let body_interface = self.physics_system.body_interface();
         for chunk in self.chunks.values() {
-            body_interface.remove_body(chunk.body_id);
-            body_interface.destroy_body(chunk.body_id);
+            self.collider_set.remove(
+                chunk.collider_handle,
+                &mut self.island_manager,
+                &mut self.rigid_body_set,
+                true,
+            );
         }
         self.chunks.clear();
 
         for i in 0..self.bodies.len() {
             self.bodies[i].physical_body.apply_edit_to_runtime();
             self.update_body(i)?;
+            self.bodies[i].render_body.rotation = glm::quat_identity();
         }
 
         let mut simulated_time = 0.0;
@@ -537,74 +473,64 @@ impl Area {
     }
 
     pub fn update_body(&mut self, index: usize) -> Result<(), String> {
-        if index >= self.bodies.len() || index >= self.rolt_body_ids.len() {
+        if index >= self.bodies.len() || index >= self.body_handles.len() {
             return Err(format!("Invalid body index: {}", index));
         }
 
-        let body = &mut self.bodies[index];
+        let old_handle = self.body_handles[index];
+        self.rigid_body_set.remove(
+            old_handle,
+            &mut self.island_manager,
+            &mut self.collider_set,
+            &mut self.impulse_joint_set,
+            &mut self.multibody_joint_set,
+            true,
+        );
+
+        let body = &self.bodies[index];
         let phys = &body.physical_body;
-        let rend = &mut body.render_body;
-        let old_id = self.rolt_body_ids[index];
+        let rend = &body.render_body;
 
-        rend.rotation = glm::quat_identity();
+        let shape = Self::create_shape_for_body(rend)?;
+        let friction = phys.edit_params.friction;
 
-        let body_interface = self.physics_system.body_interface();
-        body_interface.remove_body(old_id);
-        body_interface.destroy_body(old_id);
+        let rb_builder = Self::create_rigid_body_builder(phys);
+        let pos = phys.position;
+        let rb_handle = self
+            .rigid_body_set
+            .insert(rb_builder.translation(Vec3::new(pos.x, pos.y, pos.z)));
 
-        let shape_ptr = Self::create_shape_for_body(phys, rend)?;
-        if shape_ptr.is_null() {
-            return Err("Failed to create physics shape for update".to_string());
+        let collider_builder = Self::create_collider_builder(shape, friction, phys.mass);
+        self.collider_set
+            .insert_with_parent(collider_builder, rb_handle, &mut self.rigid_body_set);
+
+        if let Some(rb) = self.rigid_body_set.get_mut(rb_handle) {
+            let vel = phys.velocity;
+            rb.set_linvel(Vec3::new(vel.x, vel.y, vel.z), true);
         }
 
-        let motion_type = if phys.is_kinematic {
-            JPC_MOTION_TYPE_KINEMATIC
-        } else {
-            JPC_MOTION_TYPE_DYNAMIC
-        };
-
-        let created_body = unsafe {
-            body_interface.create_body(&JPC_BodyCreationSettings {
-                Position: RVec3::new(phys.position.x, phys.position.y, phys.position.z).into_jolt(),
-                Rotation: Quat::from_xyzw(0.0, 0.0, 0.0, 1.0).into_jolt(),
-                MotionType: motion_type,
-                ObjectLayer: OL_MOVING,
-                Shape: shape_ptr,
-                LinearVelocity: Vec3::new(phys.velocity.x, phys.velocity.y, phys.velocity.z)
-                    .into_jolt(),
-                AllowSleeping: false,
-                GravityFactor: 0.0,
-                LinearDamping: 0.0,
-                Restitution: 1.0,
-                Friction: body.physical_body.edit_params.friction,
-                ..Default::default()
-            })
-        };
-
-        let new_id = created_body.id();
-        body_interface.add_body(new_id, JPC_ACTIVATION_ACTIVATE);
-        self.rolt_body_ids[index] = new_id;
-
+        self.body_handles[index] = rb_handle;
         Ok(())
     }
 
     pub fn remove_body(&mut self, index: usize) -> Result<(), String> {
-        if index >= self.bodies.len() || index >= self.rolt_body_ids.len() {
+        if index >= self.bodies.len() || index >= self.body_handles.len() {
             return Err(format!("Invalid body index: {}", index));
         }
 
-        let body_interface = self.physics_system.body_interface();
-        let body_id = self.rolt_body_ids.remove(index);
+        let handle = self.body_handles.remove(index);
+        self.rigid_body_set.remove(
+            handle,
+            &mut self.island_manager,
+            &mut self.collider_set,
+            &mut self.impulse_joint_set,
+            &mut self.multibody_joint_set,
+            true,
+        );
 
-        body_interface.remove_body(body_id);
-        body_interface.destroy_body(body_id);
-
-        self.name_bodies
-            .remove(&self.bodies[index].render_body.name);
-        self.bodies.remove(index);
-
+        let name = self.bodies.remove(index).render_body.name;
+        self.name_bodies.remove(&name);
         self.update_time(0.0)?;
-
         Ok(())
     }
 
@@ -626,33 +552,5 @@ impl Area {
 
     pub fn body_mut(&mut self, index: usize) -> Option<&mut AvaBody> {
         self.bodies.get_mut(index)
-    }
-}
-
-impl Drop for Area {
-    fn drop(&mut self) {
-        let body_interface = self.physics_system.body_interface();
-
-        for &body_id in &self.rolt_body_ids {
-            body_interface.remove_body(body_id);
-            body_interface.destroy_body(body_id);
-        }
-
-        for chunk in self.chunks.values() {
-            body_interface.remove_body(chunk.body_id);
-            body_interface.destroy_body(chunk.body_id);
-        }
-
-        unsafe {
-            if !self.job_system.is_null() {
-                JPC_JobSystemThreadPool_delete(self.job_system);
-            }
-            if !self.temp_allocator.is_null() {
-                JPC_TempAllocatorImpl_delete(self.temp_allocator);
-            }
-        }
-
-        unregister_types();
-        factory_delete();
     }
 }
