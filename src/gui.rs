@@ -406,6 +406,12 @@ impl Gui {
                     .render_body
                     .name = name.clone();
                 self.area.name_bodies.insert(name.clone());
+                self.area
+                    .body_mut(selected_body_index)
+                    .unwrap()
+                    .physical_body
+                    .apply_edit_to_runtime();
+                should_apply_changes = true;
             }
 
             if should_apply_changes {
@@ -499,7 +505,7 @@ impl Gui {
             .build(|| {
                 let area = &mut self.area;
 
-                ui.text(format!("Current Time: {:.2}", area.current_time()));
+                ui.text(format!("Current Time: {:.3}", area.current_time()));
 
                 Drag::new("Set Time")
                     .range(0.0, 1000.0)

@@ -404,7 +404,14 @@ impl RenderBody {
             1.0,
         );
 
-        let mut model = glm::translate(&glm::Mat4::identity(), &physical_body.position);
+        let mut model = glm::translate(
+            &glm::Mat4::identity(),
+            &glm::vec3(
+                physical_body.position.x,
+                physical_body.position.y,
+                physical_body.position.z,
+            ),
+        );
 
         model *= glm::quat_to_mat4(&self.rotation);
 

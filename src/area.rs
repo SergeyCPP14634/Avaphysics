@@ -16,10 +16,12 @@ const OL_MOVING: u16 = 1;
 const BPL_NON_MOVING: u8 = 0;
 const BPL_MOVING: u8 = 1;
 
+const FIXED_TIMESTEP: f32 = 0.005;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ChunkCoord {
-    pub x: i32,
-    pub z: i32,
+    pub x: i64,
+    pub z: i64,
 }
 
 pub struct Chunk {
@@ -28,10 +30,11 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    const SIZE_X: f32 = 100.0;
-    const SIZE_Y: f32 = 10.0;
-    const SIZE_Z: f32 = 100.0;
-    const THRESHOLD: f32 = 10.0;
+    const SIZE_X: u32 = 50;
+    const SIZE_Y: u32 = 10;
+    const SIZE_Z: u32 = 50;
+    const THRESHOLD: u32 = 10;
+    const OVERLAP: u32 = 0;
 
     fn new(coord: ChunkCoord, body_id: BodyId) -> Self {
         Self { coord, body_id }
@@ -39,16 +42,16 @@ impl Chunk {
 
     fn chunk_coord(pos: glm::Vec3) -> ChunkCoord {
         ChunkCoord {
-            x: (pos.x / Self::SIZE_X).floor() as i32,
-            z: (pos.z / Self::SIZE_Z).floor() as i32,
+            x: (pos.x / Self::SIZE_X as f32).floor() as i64,
+            z: (pos.z / Self::SIZE_Z as f32).floor() as i64,
         }
     }
 
     fn position(coord: &ChunkCoord) -> glm::Vec3 {
         glm::vec3(
-            coord.x as f32 * Self::SIZE_X + Self::SIZE_X * 0.5,
-            -Self::SIZE_Y * 0.5,
-            coord.z as f32 * Self::SIZE_Z + Self::SIZE_Z * 0.5,
+            coord.x as f32 * Self::SIZE_X as f32 + Self::SIZE_X as f32 * 0.5,
+            -(Self::SIZE_Y as f32) * 0.5,
+            coord.z as f32 * Self::SIZE_Z as f32 + Self::SIZE_Z as f32 * 0.5,
         )
     }
 }
@@ -91,6 +94,7 @@ pub struct Area {
     current_time: f32,
     pub current_gravity: f32,
     pub current_friction: f32,
+    accumulator: f32,
     is_simulating: bool,
     physics_system: PhysicsSystem,
     temp_allocator: *mut JPC_TempAllocatorImpl,
@@ -106,6 +110,7 @@ impl Area {
         register_types();
 
         let mut physics_system = PhysicsSystem::new();
+
         physics_system.init(
             1024,
             0,
@@ -138,6 +143,7 @@ impl Area {
             current_time: 0.0,
             current_gravity: -9.81,
             current_friction: 0.2,
+            accumulator: 0.0,
             is_simulating: false,
             physics_system,
             temp_allocator,
@@ -201,6 +207,7 @@ impl Area {
                 AllowSleeping: false,
                 GravityFactor: 0.0,
                 LinearDamping: 0.0,
+                Restitution: 1.0,
                 Friction: body.physical_body.edit_params.friction,
                 ..Default::default()
             })
@@ -226,7 +233,7 @@ impl Area {
             let success = match render_body.body_type {
                 BodyType::Sphere => {
                     let radius = render_body.dimensions.x;
-                    let volume = 4.0 / 3.0 * std::f32::consts::PI * radius * radius * radius;
+                    let volume = 4.0 / 3.0 * std::f32::consts::PI * (radius * radius * radius);
                     let density = if volume > 0.0 {
                         physical_body.mass / volume
                     } else {
@@ -242,7 +249,7 @@ impl Area {
                 }
                 BodyType::Rectangle => {
                     let half = render_body.dimensions;
-                    let volume = 8.0 * half.x * half.y * half.z;
+                    let volume = 8.0 * (half.x * half.y * half.z);
                     let density = if volume > 0.0 {
                         physical_body.mass / volume
                     } else {
@@ -283,9 +290,9 @@ impl Area {
                 UserData: 0,
                 Density: 0.0,
                 HalfExtent: Vec3::new(
-                    Chunk::SIZE_X * 0.5 + 10.0,
-                    Chunk::SIZE_Y * 0.5,
-                    Chunk::SIZE_Z * 0.5 + 10.0,
+                    Chunk::SIZE_X as f32 * 0.5 + Chunk::OVERLAP as f32,
+                    Chunk::SIZE_Y as f32 * 0.5,
+                    Chunk::SIZE_Z as f32 * 0.5 + Chunk::OVERLAP as f32,
                 )
                 .into_jolt(),
                 ConvexRadius: 0.0,
@@ -332,28 +339,28 @@ impl Area {
             let chunk_coord = Chunk::chunk_coord(pos);
             needed_coords.insert(chunk_coord);
 
-            let local_x = pos.x - (chunk_coord.x as f32 * Chunk::SIZE_X);
-            let local_z = pos.z - (chunk_coord.z as f32 * Chunk::SIZE_Z);
+            let local_x = pos.x - (chunk_coord.x as f32 * Chunk::SIZE_X as f32);
+            let local_z = pos.z - (chunk_coord.z as f32 * Chunk::SIZE_Z as f32);
 
-            if local_x > Chunk::SIZE_X - Chunk::THRESHOLD {
+            if local_x > Chunk::SIZE_X as f32 - Chunk::THRESHOLD as f32 {
                 needed_coords.insert(ChunkCoord {
                     x: chunk_coord.x + 1,
                     z: chunk_coord.z,
                 });
             }
-            if local_x < Chunk::THRESHOLD {
+            if local_x < Chunk::THRESHOLD as f32 {
                 needed_coords.insert(ChunkCoord {
                     x: chunk_coord.x - 1,
                     z: chunk_coord.z,
                 });
             }
-            if local_z > Chunk::SIZE_Z - Chunk::THRESHOLD {
+            if local_z > Chunk::SIZE_Z as f32 - Chunk::THRESHOLD as f32 {
                 needed_coords.insert(ChunkCoord {
                     x: chunk_coord.x,
                     z: chunk_coord.z + 1,
                 });
             }
-            if local_z < Chunk::THRESHOLD {
+            if local_z < Chunk::THRESHOLD as f32 {
                 needed_coords.insert(ChunkCoord {
                     x: chunk_coord.x,
                     z: chunk_coord.z - 1,
@@ -372,11 +379,7 @@ impl Area {
         Ok(())
     }
 
-    pub fn update_physics(&mut self, delta_time: f32) -> Result<(), String> {
-        if delta_time <= 0.0 {
-            return Ok(());
-        }
-
+    pub fn update_physics(&mut self) -> Result<(), String> {
         self.update_chunks()?;
 
         let body_interface = self.physics_system.body_interface();
@@ -403,20 +406,16 @@ impl Area {
 
         unsafe {
             self.physics_system
-                .update(delta_time, 1, self.temp_allocator, self.job_system);
+                .update(FIXED_TIMESTEP, 1, self.temp_allocator, self.job_system);
         }
 
-        self.sync_physics_to_bodies(delta_time)?;
+        self.sync_physics_to_bodies()?;
 
-        self.current_time += delta_time;
+        self.current_time += FIXED_TIMESTEP;
         Ok(())
     }
 
-    fn sync_physics_to_bodies(&mut self, delta_time: f32) -> Result<(), String> {
-        if delta_time <= 0.0 {
-            return Ok(());
-        }
-
+    fn sync_physics_to_bodies(&mut self) -> Result<(), String> {
         let body_interface = self.physics_system.body_interface();
 
         for (body, &body_id) in self.bodies.iter_mut().zip(self.rolt_body_ids.iter()) {
@@ -448,15 +447,15 @@ impl Area {
             phys.potential_energy = phys.mass * self.current_gravity * phys.position.y;
             phys.total_mechanical_energy = phys.kinetic_energy + phys.potential_energy;
 
-            let distance = phys.velocity * delta_time;
+            let distance = phys.velocity * FIXED_TIMESTEP;
             phys.displacement = phys.position - phys.edit_params.position;
             phys.distance += glm::length(&distance);
 
             let work = glm::dot(&total_force_vector, &distance);
             phys.work += work;
-            phys.power = work / delta_time;
+            phys.power = work / FIXED_TIMESTEP;
 
-            phys.impulse = total_force_vector * delta_time;
+            phys.impulse = total_force_vector * FIXED_TIMESTEP;
 
             if phys.is_kinematic || phys.position.y <= 0.0 {
                 phys.normal_force = glm::vec3(0.0, -phys.gravity_force.y, 0.0);
@@ -479,7 +478,13 @@ impl Area {
 
     pub fn update_simulation(&mut self, delta_time: f32) -> Result<(), String> {
         if self.is_simulating {
-            self.update_physics(delta_time)?;
+            let clamped_dt = delta_time.min(0.1);
+            self.accumulator += clamped_dt;
+
+            while self.accumulator >= FIXED_TIMESTEP {
+                self.update_physics()?;
+                self.accumulator -= FIXED_TIMESTEP;
+            }
         }
         self.update_render();
         Ok(())
@@ -508,18 +513,12 @@ impl Area {
         for i in 0..self.bodies.len() {
             self.bodies[i].physical_body.apply_edit_to_runtime();
             self.update_body(i)?;
-            self.bodies[i].render_body.rotation = glm::quat_identity();
         }
 
-        if target_time > 0.0 {
-            let step = 0.01;
-            let mut accumulated = 0.0;
-            while accumulated < target_time {
-                let dt = (target_time - accumulated).min(step);
-                self.update_physics(dt)?;
-                accumulated += dt;
-            }
-            self.update_render();
+        let mut simulated_time = 0.0;
+        while simulated_time < target_time {
+            self.update_physics()?;
+            simulated_time += FIXED_TIMESTEP;
         }
 
         self.current_time = target_time;
@@ -542,10 +541,12 @@ impl Area {
             return Err(format!("Invalid body index: {}", index));
         }
 
-        let body = &self.bodies[index];
+        let body = &mut self.bodies[index];
         let phys = &body.physical_body;
-        let rend = &body.render_body;
+        let rend = &mut body.render_body;
         let old_id = self.rolt_body_ids[index];
+
+        rend.rotation = glm::quat_identity();
 
         let body_interface = self.physics_system.body_interface();
         body_interface.remove_body(old_id);
@@ -574,6 +575,7 @@ impl Area {
                 AllowSleeping: false,
                 GravityFactor: 0.0,
                 LinearDamping: 0.0,
+                Restitution: 1.0,
                 Friction: body.physical_body.edit_params.friction,
                 ..Default::default()
             })
