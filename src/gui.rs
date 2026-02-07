@@ -587,6 +587,11 @@ impl Gui {
                     self.new_body.physical_body.edit_params.is_kinematic = is_kinematic;
                 }
 
+                let mut is_restitution = self.new_body.physical_body.edit_params.is_restitution;
+                if ui.checkbox("Is Restitution", &mut is_restitution) {
+                    self.new_body.physical_body.edit_params.is_restitution = is_restitution;
+                }
+
                 self.texture_buffer = self.new_body.render_body.texture_path.clone();
                 if ui
                     .input_text("Texture Path", &mut self.texture_buffer)

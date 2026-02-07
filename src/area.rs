@@ -3,7 +3,7 @@ use nalgebra_glm as glm;
 use rapier3d::prelude::*;
 use std::collections::HashSet;
 
-const FIXED_TIMESTEP: f32 = 0.005;
+const FIXED_TIMESTEP: f32 = 0.003;
 
 pub struct Area {
     bodies: Vec<AvaBody>,
@@ -79,7 +79,8 @@ impl Area {
         } else {
             RigidBodyBuilder::dynamic()
                 .gravity_scale(1.0)
-                .ccd_enabled(true)
+                .linear_damping(0.0)
+                .angular_damping(0.0)
         }
     }
 
