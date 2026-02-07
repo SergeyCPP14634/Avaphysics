@@ -14,7 +14,7 @@ pub struct EditParameters {
     pub friction: f32,
     pub force: glm::Vec3,
     pub is_kinematic: bool,
-
+    pub is_restitution: bool,
     pub acceleration: glm::Vec3,
     pub momentum: glm::Vec3,
     pub kinetic_energy: f32,
@@ -22,13 +22,10 @@ pub struct EditParameters {
     pub total_mechanical_energy: f32,
     pub net_force: f32,
     pub gravity_force: glm::Vec3,
-
     pub current_gravity: f32,
-
     pub angular_velocity: f32,
     pub angular_acceleration: f32,
     pub torque: glm::Vec3,
-
     pub displacement: glm::Vec3,
     pub distance: f32,
     pub friction_force: glm::Vec3,
@@ -48,6 +45,7 @@ impl Default for EditParameters {
             friction: 0.2,
             force: glm::vec3(0.0, 0.0, 0.0),
             is_kinematic: false,
+            is_restitution: false,
 
             acceleration: glm::vec3(0.0, 0.0, 0.0),
             momentum: glm::vec3(0.0, 0.0, 0.0),
@@ -161,6 +159,7 @@ pub struct PhysicalBody {
     pub power: f32,
     pub torque: glm::Vec3,
     pub is_kinematic: bool,
+    pub is_restitution: bool,
     pub current_gravity: f32,
     pub edit_params: EditParameters,
 }
@@ -192,6 +191,7 @@ impl Default for PhysicalBody {
             power: 0.0,
             torque: glm::vec3(0.0, 0.0, 0.0),
             is_kinematic: false,
+            is_restitution: false,
             current_gravity: -9.81,
             edit_params: EditParameters::default(),
         }
@@ -224,6 +224,7 @@ impl PhysicalBody {
         power: f32,
         torque: glm::Vec3,
         is_kinematic: bool,
+        is_restitution: bool,
         current_gravity: f32,
     ) -> Self {
         let mut body = Self {
@@ -251,6 +252,7 @@ impl PhysicalBody {
             power,
             torque,
             is_kinematic,
+            is_restitution,
             current_gravity,
             edit_params: EditParameters::default(),
         };
@@ -284,6 +286,7 @@ impl PhysicalBody {
             power: self.power,
             torque: self.torque,
             is_kinematic: self.is_kinematic,
+            is_restitution: self.is_restitution,
             current_gravity: self.current_gravity,
         };
     }
@@ -314,6 +317,7 @@ impl PhysicalBody {
         self.power = params.power;
         self.torque = params.torque;
         self.is_kinematic = params.is_kinematic;
+        self.is_restitution = params.is_restitution;
         self.current_gravity = params.current_gravity;
     }
 }

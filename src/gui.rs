@@ -103,13 +103,23 @@ impl Gui {
             .build(|| {
                 let area = &mut self.area;
 
-                let mut gravity = area.current_gravity;
+                let mut is_restitution = area.current_restitution() > 0.0;
+                if ui.checkbox("Is Restitution", &mut is_restitution) {
+                    area.update_current_restitution(if is_restitution { 1.0 } else { 0.0 });
+                    if area.is_simulating() {
+                        area.update_time(0.0)?;
+                    }
+                }
+
+                ui.separator();
+
+                let mut gravity = area.current_gravity();
                 if Drag::new("Gravity")
                     .range(-100.0, 100.0)
                     .speed(0.1)
                     .build(ui, &mut gravity)
                 {
-                    area.current_gravity = gravity;
+                    area.update_current_gravity(gravity);
 
                     for i in 0..area.count_bodies() {
                         if let Some(body) = area.body_mut(i) {
@@ -132,13 +142,13 @@ impl Gui {
                         .update_current_gravity(gravity);
                 }
 
-                let mut friction = area.current_friction;
+                let mut friction = area.current_friction();
                 if Drag::new("Friction")
                     .range(-100.0, 100.0)
                     .speed(0.1)
                     .build(ui, &mut friction)
                 {
-                    area.current_friction = friction;
+                    area.update_current_friction(friction);
                     if area.is_simulating() {
                         area.update_time(0.0)?;
                     }
@@ -262,6 +272,13 @@ impl Gui {
                 let mut is_kinematic = body.physical_body.edit_params.is_kinematic;
                 if ui.checkbox("Is Kinematic", &mut is_kinematic) {
                     body.physical_body.edit_params.is_kinematic = is_kinematic;
+                    body.physical_body.apply_edit_to_runtime();
+                    should_apply_changes = true;
+                }
+
+                let mut is_restitution = body.physical_body.edit_params.is_restitution;
+                if ui.checkbox("Is Restitution", &mut is_restitution) {
+                    body.physical_body.edit_params.is_restitution = is_restitution;
                     body.physical_body.apply_edit_to_runtime();
                     should_apply_changes = true;
                 }
