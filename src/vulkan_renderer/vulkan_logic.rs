@@ -3,7 +3,7 @@ use std::io::Read;
 use super::*;
 
 use crate::body::Vertex;
-use russimp::scene::{PostProcess, Scene};
+use russimp_ng::scene::{PostProcess, Scene};
 
 pub type VulkanLogicResult<T> = Result<T, String>;
 
