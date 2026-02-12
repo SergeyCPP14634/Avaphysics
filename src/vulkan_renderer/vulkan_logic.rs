@@ -1,3 +1,5 @@
+use std::io::Read;
+
 use super::*;
 
 use crate::body::Vertex;
@@ -33,9 +35,15 @@ pub fn create_texture(
     let (mut width, mut height, mut channels) = (0usize, 0usize, 0usize);
 
     for (i, path) in paths.iter().enumerate() {
-        let image = match stb_image::image::load_with_depth(path, 4, false) {
+        let mut buffer = Vec::new();
+        sdl3::iostream::IOStream::from_file(path, "rb")
+            .map_err(|_| format!("{}: Failed to load texture at index {}", error_object, i))?
+            .read_to_end(&mut buffer)
+            .map_err(|_| format!("{}: Failed to read texture at index {}", error_object, i))?;
+
+        let image = match stb_image::image::load_from_memory_with_depth(&buffer, 4, false) {
             stb_image::image::LoadResult::ImageU8(image) => image,
-            _ => return Err(format!("Failed to load texture at index {}", i)),
+            _ => return Err(format!("{}: Undefined texture at index {}", error_object, i)),
         };
 
         let (w, h, c) = (image.width, image.height, image.depth);
@@ -43,7 +51,7 @@ pub fn create_texture(
         if i == 0 {
             (width, height, channels) = (w, h, c);
         } else if w != width || h != height || c != channels {
-            return Err(format!("Texture parameters do not match at index {}", i));
+            return Err(format!("{}: Texture parameters do not match at index {}", error_object, i));
         }
 
         pixels.push(image.data);
@@ -139,7 +147,7 @@ pub fn create_image_from_data(
     height: u32,
     data: &[u8],
 ) -> VulkanLogicResult<Image> {
-    let error_object = String::from("CreateTexture");
+    let error_object = String::from("CreateImageFromData");
 
     let mut staging_buffer = Buffer::new(BufferConfig {
         device: device.clone(),
@@ -192,12 +200,21 @@ pub fn create_image_from_data(
     Ok(texture_image)
 }
 
-pub fn load_model(model_path: &str) -> Result<ModelData, String> {
-    let scene = Scene::from_file(
-        model_path,
+pub fn load_model(model_path: String) -> Result<ModelData, String> {
+    let error_object = String::from("LoadModel");
+
+    let mut buffer = Vec::new();
+    sdl3::iostream::IOStream::from_file(&model_path, "rb")
+        .map_err(|_| format!("{}: Failed to load model", error_object))?
+        .read_to_end(&mut buffer)
+        .map_err(|_| format!("{}: Failed to read model", error_object))?;
+
+    let scene = Scene::from_buffer(
+        &buffer,
         vec![PostProcess::Triangulate, PostProcess::CalculateTangentSpace],
+        model_path.rsplit('.').next().unwrap()
     )
-    .map_err(|_| format!("Failed to load model: {}", model_path))?;
+    .map_err(|_| format!("{}: Failed to load model: {}", error_object, model_path))?;
 
     let mut meshes_vertices = Vec::new();
     let mut meshes_indices = Vec::new();
@@ -212,7 +229,7 @@ pub fn load_model(model_path: &str) -> Result<ModelData, String> {
         let has_colors = !mesh.colors.is_empty();
 
         if !has_normals {
-            return Err("Failed to find normals in mesh".to_string());
+            return Err(format!("{}: Failed to find normals in mesh", error_object));
         }
 
         for face in &mesh.faces {

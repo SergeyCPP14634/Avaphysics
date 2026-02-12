@@ -779,8 +779,8 @@ impl PhysicalRenderer {
             }],
         })?;
 
-        let sphere = load_model("objects/sphere.obj")?;
-        let cube = load_model("objects/cube.obj")?;
+        let sphere = load_model("objects/sphere.obj".to_string())?;
+        let cube = load_model("objects/cube.obj".to_string())?;
 
         let mut vertex_buffers_bodies = vec![
             Buffer::new(BufferConfig {
