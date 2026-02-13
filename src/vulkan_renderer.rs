@@ -1268,7 +1268,6 @@ pub struct SwapchainConfig {
     pub physical_device: PhysicalDevice,
     pub device: Device,
     pub present_mode: PresentMode,
-    pub count_images: u32,
     pub width: u32,
     pub height: u32,
 }
@@ -1280,7 +1279,6 @@ impl Default for SwapchainConfig {
             physical_device: PhysicalDevice::new(PhysicalDeviceConfig::default()).unwrap(),
             device: Device::new(DeviceConfig::default()).unwrap(),
             present_mode: PresentMode::Fifo,
-            count_images: 0,
             width: 0,
             height: 0,
         }
@@ -1307,9 +1305,6 @@ impl VulkanRendererObject for Swapchain {
         let physical_device = &config.physical_device.physical_device;
         let device = &config.device.device;
 
-        if config.count_images < 2 {
-            return Err(format!("{}: Undefined count images", error_object));
-        }
         if config.width == 0 {
             return Err(format!("{}: Undefined width", error_object));
         }
@@ -1327,11 +1322,13 @@ impl VulkanRendererObject for Swapchain {
             &error_object,
         )?;
 
+        let capabilities = Self::surface_capabilities(physical_device, surface, &error_object)?;
+
         let swapchain = swapchain::Swapchain::new(
             device.clone(),
             surface.clone(),
             swapchain::SwapchainCreateInfo {
-                min_image_count: config.count_images,
+                min_image_count: capabilities.min_image_count,
                 image_format: format.0,
                 image_color_space: format.1,
                 image_extent: extent,
@@ -1383,7 +1380,7 @@ impl Swapchain {
     ) -> VulkanRendererResult<(format::Format, swapchain::ColorSpace)> {
         let formats = physical_device
             .surface_formats(surface, swapchain::SurfaceInfo::default())
-            .map_err(|_| format!("{0}: Failed to get surface formats", error_object))?;
+            .map_err(|_| format!("{}: Failed to get surface formats", error_object))?;
 
         Ok(formats
             .iter()
@@ -1403,9 +1400,7 @@ impl Swapchain {
         height: u32,
         error_object: &String,
     ) -> VulkanRendererResult<[u32; 2]> {
-        let surface_capabilities = physical_device
-            .surface_capabilities(surface, swapchain::SurfaceInfo::default())
-            .map_err(|_| format!("{0}: Failed to get surface capabilities", error_object))?;
+        let surface_capabilities = Self::surface_capabilities(physical_device, surface, error_object)?;
 
         Ok(match surface_capabilities.current_extent {
             Some(extent) if extent[0] == u32::MAX => [
@@ -1430,6 +1425,16 @@ impl Swapchain {
                 ),
             ],
         })
+    }
+
+    fn surface_capabilities(
+        physical_device: &Arc<device::physical::PhysicalDevice>,
+        surface: &Arc<swapchain::Surface>,
+        error_object: &String,
+    ) -> VulkanRendererResult<swapchain::SurfaceCapabilities> {
+        physical_device
+            .surface_capabilities(surface, swapchain::SurfaceInfo::default())
+            .map_err(|_| format!("{}: Failed to get surface capabilities", error_object))
     }
 
     pub fn images(&self) -> Vec<Image> {
