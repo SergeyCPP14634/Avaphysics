@@ -43,7 +43,12 @@ pub fn create_texture(
 
         let image = match stb_image::image::load_from_memory_with_depth(&buffer, 4, false) {
             stb_image::image::LoadResult::ImageU8(image) => image,
-            _ => return Err(format!("{}: Undefined texture at index {}", error_object, i)),
+            _ => {
+                return Err(format!(
+                    "{}: Undefined texture at index {}",
+                    error_object, i
+                ));
+            }
         };
 
         let (w, h, c) = (image.width, image.height, image.depth);
@@ -51,7 +56,10 @@ pub fn create_texture(
         if i == 0 {
             (width, height, channels) = (w, h, c);
         } else if w != width || h != height || c != channels {
-            return Err(format!("{}: Texture parameters do not match at index {}", error_object, i));
+            return Err(format!(
+                "{}: Texture parameters do not match at index {}",
+                error_object, i
+            ));
         }
 
         pixels.push(image.data);
@@ -212,7 +220,7 @@ pub fn load_model(model_path: String) -> Result<ModelData, String> {
     let scene = Scene::from_buffer(
         &buffer,
         vec![PostProcess::Triangulate, PostProcess::CalculateTangentSpace],
-        model_path.rsplit('.').next().unwrap()
+        model_path.rsplit('.').next().unwrap(),
     )
     .map_err(|_| format!("{}: Failed to load model: {}", error_object, model_path))?;
 
@@ -272,4 +280,44 @@ pub fn load_model(model_path: String) -> Result<ModelData, String> {
         meshes_indices,
         indices_counts,
     })
+}
+
+pub fn create_shader_module(
+    device: Device,
+    shader_path: String,
+) -> VulkanLogicResult<Arc<shader::ShaderModule>> {
+    let error_object = String::from("CreateShaderModule");
+
+    let mut buffer = Vec::new();
+    sdl3::iostream::IOStream::from_file(&shader_path, "rb")
+        .map_err(|_| format!("{}: Failed to load shader", error_object))?
+        .read_to_end(&mut buffer)
+        .map_err(|_| format!("{}: Failed to read shader", error_object))?;
+
+    create_shader_module_from_data(device, &buffer)
+}
+
+pub fn create_shader_module_from_data(
+    device: Device,
+    data: &[u8],
+) -> VulkanLogicResult<Arc<shader::ShaderModule>> {
+    let error_object = String::from("CreateShaderModuleFromData");
+
+    let words = shader::spirv::bytes_to_words(data)
+        .map_err(|_| format!("{}: Failed to parse SPIR-V bytecode", error_object))?;
+
+    let shader_module = unsafe {
+        shader::ShaderModule::new(
+            device.device.clone(),
+            shader::ShaderModuleCreateInfo::new(&words),
+        )
+    }
+    .map_err(|err| {
+        format!(
+            "{}: Failed to create shader module: {:?}",
+            error_object, err
+        )
+    })?;
+
+    Ok(shader_module)
 }

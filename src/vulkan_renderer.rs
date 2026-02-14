@@ -436,15 +436,6 @@ impl VulkanRendererObject for Device {
     }
 }
 
-impl Device {
-    pub fn load_shader(
-        &self,
-        load_fn: ShaderLoadFn,
-    ) -> Result<Arc<shader::ShaderModule>, Validated<VulkanError>> {
-        load_fn(self.device.clone())
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BufferUsage {
     Src,
@@ -1400,7 +1391,8 @@ impl Swapchain {
         height: u32,
         error_object: &String,
     ) -> VulkanRendererResult<[u32; 2]> {
-        let surface_capabilities = Self::surface_capabilities(physical_device, surface, error_object)?;
+        let surface_capabilities =
+            Self::surface_capabilities(physical_device, surface, error_object)?;
 
         Ok(match surface_capabilities.current_extent {
             Some(extent) if extent[0] == u32::MAX => [

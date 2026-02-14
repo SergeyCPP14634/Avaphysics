@@ -9,7 +9,6 @@ dead_code = "allow"
 [dependencies]
 sdl3 = "0.17.3"
 vulkano = "0.35.2"
-vulkano-shaders = "0.35.0"
 ash = "0.38.0"
 stb_image = "0.3.0"
 imgui = "0.12.0"
