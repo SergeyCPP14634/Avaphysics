@@ -69,6 +69,7 @@ impl VulkanRendererObject for Instance {
             instance::InstanceCreateInfo {
                 application_name: Some(config.app_name.clone()),
                 engine_name: Some(config.engine_name.clone()),
+                max_api_version: Some(instance::Version::V1_1),
                 enabled_extensions: extensions,
                 ..Default::default()
             },
@@ -1324,6 +1325,7 @@ impl VulkanRendererObject for Swapchain {
                 image_color_space: format.1,
                 image_extent: extent,
                 image_usage: image::ImageUsage::COLOR_ATTACHMENT,
+                composite_alpha: capabilities.supported_composite_alpha.into_iter().next().unwrap(),
                 present_mode: config.present_mode.into(),
                 ..Default::default()
             },
