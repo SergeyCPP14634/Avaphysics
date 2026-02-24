@@ -36,11 +36,6 @@ fn main() {
     let mut last_time = std::time::Instant::now();
 
     'running: loop {
-        if physical_renderer.window.is_minimized() {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            continue;
-        }
-
         for event in physical_renderer
             .sdl_context
             .event_pump()
@@ -81,6 +76,11 @@ fn main() {
             } else {
                 physical_renderer.update_event_imgui(Some(&event));
             }
+        }
+
+        if physical_renderer.window.is_minimized() {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            continue;
         }
 
         let current_time = std::time::Instant::now();
