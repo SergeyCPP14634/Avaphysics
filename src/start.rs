@@ -8,8 +8,8 @@ mod gui;
 mod physical_renderer;
 mod vulkan_renderer;
 
-use sdl3::event::Event;
-use sdl3::keyboard::Keycode;
+use sdl3::event::*;
+use sdl3::keyboard::*;
 
 use crate::area::Area;
 use crate::camera::*;
@@ -36,6 +36,11 @@ fn main() {
     let mut last_time = std::time::Instant::now();
 
     'running: loop {
+        if physical_renderer.window.is_minimized() {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            continue;
+        }
+
         for event in physical_renderer
             .sdl_context
             .event_pump()
@@ -49,7 +54,7 @@ fn main() {
                     ..
                 } => break 'running,
                 Event::Window {
-                    win_event: sdl3::event::WindowEvent::Resized(..),
+                    win_event: WindowEvent::Resized(..),
                     ..
                 } => {
                     camera.width = physical_renderer.window.size_in_pixels().0;

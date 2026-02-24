@@ -1,7 +1,8 @@
 extern crate nalgebra_glm as glm;
 extern crate sdl3;
 
-use sdl3::event::Event;
+use sdl3::event::*;
+use sdl3::keyboard::*;
 use std::mem::*;
 
 use crate::body::*;
@@ -655,12 +656,22 @@ impl PhysicalRenderer {
     }
 
     pub fn update_event(&mut self, event: &sdl3::event::Event) {
-        if let Event::Window {
-            win_event: sdl3::event::WindowEvent::Resized(..),
-            ..
-        } = event
-        {
-            self.renderer.recreate_swapchain().unwrap();
+        match event {
+            Event::Window {
+                win_event: sdl3::event::WindowEvent::Resized(..),
+                ..
+            } => self.renderer.recreate_swapchain().unwrap(),
+            Event::KeyDown {
+                keycode: Some(Keycode::F11),
+                ..
+            } => self.window.set_fullscreen(if self.window.fullscreen_state() == sdl3::video::FullscreenType::True
+                                               || self.window.fullscreen_state() == sdl3::video::FullscreenType::Desktop
+            {
+                false
+            } else {
+                true
+            }).unwrap(),
+            _ => {}
         }
     }
 

@@ -10,6 +10,7 @@ use std::rc::*;
 use std::sync::*;
 use vulkano::sync::GpuFuture;
 use vulkano::*;
+use sdl3::event::*;
 
 type ShaderLoadFn =
     fn(Arc<device::Device>) -> Result<Arc<shader::ShaderModule>, Validated<VulkanError>>;
@@ -2612,55 +2613,56 @@ impl ImGuiContext {
         io.app_focus_lost = true;
     }
 
-    pub fn update_event(&mut self, event: &sdl3::event::Event) -> bool {
+    pub fn update_event(&mut self, event: &sdl3::event::Event) {
         let io = self.imgui_context.io_mut();
 
         match *event {
-            sdl3::event::Event::MouseMotion { x, y, .. } => {
+            Event::MouseMotion { x, y, .. } => {
                 io.add_mouse_pos_event([x, y]);
-                true
             }
-            sdl3::event::Event::MouseWheel { x, y, .. } => {
+
+            Event::Window {
+                win_event: WindowEvent::Resized(width, height),
+                ..
+            } => {
+                let scale = (((width as f32 / 1920.0) + (height as f32 / 1080.0)) / 2.0).max(1.0);
+
+                self.imgui_context.io_mut().font_global_scale = scale;
+            }
+
+            Event::MouseWheel { x, y, .. } => {
                 io.add_mouse_wheel_event([x, y]);
-                true
             }
 
-            sdl3::event::Event::MouseButtonDown { mouse_btn, .. } => {
+            Event::MouseButtonDown { mouse_btn, .. } => {
                 Self::handle_mouse_button(io, &mouse_btn, true);
-                true
             }
 
-            sdl3::event::Event::MouseButtonUp { mouse_btn, .. } => {
+            Event::MouseButtonUp { mouse_btn, .. } => {
                 Self::handle_mouse_button(io, &mouse_btn, false);
-                true
             }
 
-            sdl3::event::Event::TextInput { ref text, .. } => {
+            Event::TextInput { ref text, .. } => {
                 text.chars().for_each(|c| io.add_input_character(c));
-                true
             }
 
-            sdl3::event::Event::KeyDown {
+            Event::KeyDown {
                 scancode: Some(key),
                 keymod,
                 ..
             } => {
                 Self::handle_key_modifier(io, &keymod);
                 Self::handle_key(io, &key, true);
-                true
             }
 
-            sdl3::event::Event::KeyUp {
-                scancode: Some(key),
+            Event::KeyUp {
                 keymod,
                 ..
             } => {
                 Self::handle_key_modifier(io, &keymod);
-                Self::handle_key(io, &key, false);
-                true
             }
 
-            _ => false,
+            _ => {},
         }
     }
 
