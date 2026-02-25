@@ -76,6 +76,9 @@ impl Area {
     fn create_rigid_body_builder(phys: &crate::body::PhysicalBody) -> RigidBodyBuilder {
         if phys.is_kinematic {
             RigidBodyBuilder::kinematic_position_based()
+                .gravity_scale(1.0)
+                .linear_damping(0.0)
+                .angular_damping(0.0)
         } else {
             RigidBodyBuilder::dynamic()
                 .gravity_scale(1.0)
@@ -94,6 +97,8 @@ impl Area {
             .mass(mass)
             .friction(friction)
             .restitution(restitution)
+            .restitution_combine_rule(CoefficientCombineRule::Max)
+            .friction_combine_rule(CoefficientCombineRule::Max)
     }
 
     pub fn add_body(&mut self, body: AvaBody) -> Result<(), String> {
