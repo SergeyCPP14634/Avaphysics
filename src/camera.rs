@@ -191,6 +191,12 @@ impl Camera {
         } else {
             sdl.mouse().show_cursor(true);
             sdl.mouse().set_relative_mouse_mode(window, false);
+            self.front = false;
+            self.back = false;
+            self.left = false;
+            self.right = false;
+            self.up = false;
+            self.down = false;
         }
     }
 
