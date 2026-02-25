@@ -2656,10 +2656,12 @@ impl ImGuiContext {
             }
 
             Event::KeyUp {
+                scancode: Some(key),
                 keymod,
                 ..
             } => {
                 Self::handle_key_modifier(io, &keymod);
+                Self::handle_key(io, &key, false);
             }
 
             _ => {},
