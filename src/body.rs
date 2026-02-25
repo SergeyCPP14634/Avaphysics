@@ -93,7 +93,7 @@ impl EditParameters {
 
         self.momentum = mass * self.velocity;
         self.kinetic_energy = 0.5 * mass * glm::dot(&self.velocity, &self.velocity);
-        self.potential_energy = mass * self.current_gravity * self.position.y;
+        self.potential_energy = mass * self.current_gravity.abs() * self.position.y;
         self.total_mechanical_energy = self.kinetic_energy + self.potential_energy;
     }
 

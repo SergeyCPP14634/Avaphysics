@@ -115,7 +115,7 @@ impl Gui {
 
                 let mut gravity = area.current_gravity();
                 if Drag::new("Gravity")
-                    .range(-100.0, 100.0)
+                    .range(-1000.0, 1000.0)
                     .speed(0.1)
                     .build(ui, &mut gravity)
                 {
@@ -144,10 +144,11 @@ impl Gui {
 
                 let mut friction = area.current_friction();
                 if Drag::new("Friction")
-                    .range(-100.0, 100.0)
+                    .range(0.0, 1000.0)
                     .speed(0.1)
                     .build(ui, &mut friction)
                 {
+                    friction = friction.max(0.0);
                     area.update_current_friction(friction);
                     if area.is_simulating() {
                         area.update_time(0.0)?;
@@ -298,11 +299,11 @@ impl Gui {
                     BodyType::Sphere => {
                         let mut radius = body.render_body.dimensions.x;
                         if Drag::new("Radius")
-                            .range(0.1, 100.0)
+                            .range(0.1, 1000.0)
                             .speed(0.1)
                             .build(ui, &mut radius)
                         {
-                            radius = if radius <= 0.0 { 0.001 } else { radius };
+                            radius = radius.max(0.001);
                             body.render_body.dimensions = glm::vec3(radius, radius, radius);
                             should_apply_changes = true;
                         }
@@ -314,13 +315,13 @@ impl Gui {
                             body.render_body.dimensions.z,
                         ];
                         if Drag::new("Dimensions")
-                            .range(0.1, 100.0)
+                            .range(0.1, 1000.0)
                             .speed(0.1)
                             .build_array(ui, &mut dims)
                         {
-                            dims[0] = if dims[0] <= 0.0 { 0.001 } else { dims[0] };
-                            dims[1] = if dims[1] <= 0.0 { 0.001 } else { dims[1] };
-                            dims[2] = if dims[2] <= 0.0 { 0.001 } else { dims[2] };
+                            dims[0] = dims[0].max(0.001);
+                            dims[1] = dims[1].max(0.001);
+                            dims[2] = dims[2].max(0.001);
                             body.render_body.dimensions = glm::vec3(dims[0], dims[1], dims[2]);
                             should_apply_changes = true;
                         }
@@ -371,10 +372,11 @@ impl Gui {
 
                 let mut mass = body.physical_body.edit_params.mass;
                 if Drag::new("Mass")
-                    .range(0.001, 1000.0)
+                    .range(0.1, 1000.0)
                     .speed(0.1)
                     .build(ui, &mut mass)
                 {
+                    mass = mass.max(0.001);
                     body.physical_body.edit_params.update_mass(mass);
                     body.physical_body.apply_edit_to_runtime();
                     should_apply_changes = true;
@@ -382,10 +384,11 @@ impl Gui {
 
                 let mut friction = body.physical_body.edit_params.friction;
                 if Drag::new("Friction")
-                    .range(0.001, 1000.0)
+                    .range(0.0, 1000.0)
                     .speed(0.1)
                     .build(ui, &mut friction)
                 {
+                    friction = friction.max(0.0);
                     body.physical_body.edit_params.update_friction(friction);
                     body.physical_body.apply_edit_to_runtime();
                     should_apply_changes = true;
@@ -605,11 +608,11 @@ impl Gui {
                     BodyType::Sphere => {
                         let mut radius = self.new_body.render_body.dimensions.x;
                         if Drag::new("Radius")
-                            .range(0.1, 100.0)
+                            .range(0.1, 1000.0)
                             .speed(0.1)
                             .build(ui, &mut radius)
                         {
-                            radius = if radius <= 0.0 { 0.001 } else { radius };
+                            radius = radius.max(0.001);
                             self.new_body.render_body.dimensions =
                                 glm::vec3(radius, radius, radius);
                         }
@@ -621,13 +624,13 @@ impl Gui {
                             self.new_body.render_body.dimensions.z,
                         ];
                         if Drag::new("Dimensions")
-                            .range(0.1, 100.0)
+                            .range(0.1, 1000.0)
                             .speed(0.1)
                             .build_array(ui, &mut dims)
                         {
-                            dims[0] = if dims[0] <= 0.0 { 0.001 } else { dims[0] };
-                            dims[1] = if dims[1] <= 0.0 { 0.001 } else { dims[1] };
-                            dims[2] = if dims[2] <= 0.0 { 0.001 } else { dims[2] };
+                            dims[0] = dims[0].max(0.001);
+                            dims[1] = dims[1].max(0.001);
+                            dims[2] = dims[2].max(0.001);
                             self.new_body.render_body.dimensions =
                                 glm::vec3(dims[0], dims[1], dims[2]);
                         }
@@ -675,19 +678,21 @@ impl Gui {
 
                 let mut mass = self.new_body.physical_body.edit_params.mass;
                 if Drag::new("Mass")
-                    .range(0.001, 1000.0)
+                    .range(0.1, 1000.0)
                     .speed(0.1)
                     .build(ui, &mut mass)
                 {
+                    mass = mass.max(0.001);
                     self.new_body.physical_body.edit_params.update_mass(mass);
                 }
 
                 let mut friction = self.new_body.physical_body.edit_params.friction;
                 if Drag::new("Friction")
-                    .range(0.001, 1000.0)
+                    .range(0.0, 1000.0)
                     .speed(0.1)
                     .build(ui, &mut friction)
                 {
+                    friction = friction.max(0.0);
                     self.new_body
                         .physical_body
                         .edit_params

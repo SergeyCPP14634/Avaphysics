@@ -400,7 +400,7 @@ impl Area {
             * body.physical_body.mass
             * glm::dot(&body.physical_body.velocity, &body.physical_body.velocity);
         body.physical_body.potential_energy =
-            body.physical_body.mass * current_gravity * body.physical_body.position.y;
+            body.physical_body.mass * current_gravity.abs() * body.physical_body.position.y;
         body.physical_body.total_mechanical_energy =
             body.physical_body.kinetic_energy + body.physical_body.potential_energy;
 
