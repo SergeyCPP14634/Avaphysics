@@ -274,13 +274,26 @@ impl PhysicalRenderer {
             },
         ];
 
+        #[cfg(target_os = "android")]
+        sdl3::hint::set(sdl3::hint::names::ORIENTATIONS, "LandscapeLeft LandscapeRight");
+
         let sdl_context = sdl3::init().map_err(|_| "Failed to create sdl context")?;
         let video_subsystem = sdl_context
             .video()
             .map_err(|err| format!("Failed to create sdl video subsystem {}", err))?;
 
+        #[cfg(not(target_os = "android"))]
         let window = video_subsystem
             .window("Physical", width, height)
+            .resizable()
+            .vulkan()
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        #[cfg(target_os = "android")]
+        let window = video_subsystem
+            .window("Physical", width, height)
+            .fullscreen()
             .resizable()
             .vulkan()
             .build()
@@ -661,16 +674,20 @@ impl PhysicalRenderer {
                 win_event: sdl3::event::WindowEvent::Resized(..),
                 ..
             } => self.renderer.recreate_swapchain().unwrap(),
+            Event::Display {
+                display_event: sdl3::event::DisplayEvent::Orientation(..),
+                ..
+            } => self.renderer.recreate_swapchain().unwrap(),
             Event::KeyDown {
                 keycode: Some(Keycode::F11),
                 ..
-            } => self.window.set_fullscreen(if self.window.fullscreen_state() == sdl3::video::FullscreenType::True
-                                               || self.window.fullscreen_state() == sdl3::video::FullscreenType::Desktop
-            {
-                false
-            } else {
-                true
-            }).unwrap(),
+            } => self
+                .window
+                .set_fullscreen(
+                    !(self.window.fullscreen_state() == sdl3::video::FullscreenType::True
+                        || self.window.fullscreen_state() == sdl3::video::FullscreenType::Desktop),
+                )
+                .unwrap(),
             _ => {}
         }
     }

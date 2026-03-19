@@ -15,7 +15,12 @@ imgui = "0.12.0"
 russimp-ng = { version = "3.2.7", features = ["static-link"]}
 rapier3d = "0.32.0"
 nalgebra-glm = "0.20.0"
+log = "0.4.29"
+android_logger = "0.15.1"
 
 [[bin]]
 name = "avaphysics"
-path = "src/start.rs"
+
+[lib]
+name = "avaphysics"
+crate-type = ["cdylib", "rlib"]

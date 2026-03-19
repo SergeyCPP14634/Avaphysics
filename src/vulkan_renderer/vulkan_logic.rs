@@ -4,6 +4,7 @@ use super::*;
 
 use crate::body::Vertex;
 use russimp_ng::scene::{PostProcess, Scene};
+use std::thread::Builder;
 
 pub type VulkanLogicResult<T> = Result<T, String>;
 
@@ -304,15 +305,20 @@ pub fn create_shader_module_from_data(
     let error_object = String::from("CreateShaderModuleFromData");
 
     let words = shader::spirv::bytes_to_words(data)
-        .map_err(|_| format!("{}: Failed to parse SPIR-V bytecode", error_object))?;
+        .map_err(|_| format!("{}: Failed to parse SPIR-V bytecode", error_object))?
+        .into_owned();
 
-    let shader_module = unsafe {
-        shader::ShaderModule::new(
-            device.device.clone(),
-            shader::ShaderModuleCreateInfo::new(&words),
-        )
-    }
-    .map_err(|err| {
+    let handle = Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(move || unsafe {
+            shader::ShaderModule::new(
+                device.device.clone(),
+                shader::ShaderModuleCreateInfo::new(&words),
+            )
+        })
+        .map_err(|_| format!("{}: Failed to spawn thread", error_object))?;
+
+    let shader_module = handle.join().unwrap().map_err(|err| {
         format!(
             "{}: Failed to create shader module: {:?}",
             error_object, err

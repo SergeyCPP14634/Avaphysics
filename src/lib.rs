@@ -11,12 +11,32 @@ mod vulkan_renderer;
 use sdl3::event::*;
 use sdl3::keyboard::*;
 
+use log::*;
+use std::panic;
+
 use crate::area::Area;
 use crate::camera::*;
 use crate::gui::*;
 use crate::physical_renderer::*;
 
-fn main() {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn SDL_main() {
+    unsafe {
+        sdl3::sys::main::SDL_SetMainReady();
+    }
+
+    panic::set_hook(Box::new(|info| {
+        error!("PANIC: {:?}", info);
+    }));
+
+    android_logger::init_once(android_logger::Config::default());
+
+    if let Err(err) = run_app() {
+        error!("App error: {}", err);
+    }
+}
+
+pub fn run_app() -> Result<(), String> {
     let mut physical_renderer = PhysicalRenderer::new(800, 600).unwrap();
 
     let mut camera = Camera::new(
@@ -96,4 +116,5 @@ fn main() {
             .render(&mut gui, &camera, delta_time)
             .unwrap();
     }
+    Ok(())
 }

@@ -3,6 +3,7 @@ extern crate sdl3;
 mod imgui_renderer;
 pub mod vulkan_logic;
 
+use sdl3::event::*;
 use std::any::*;
 use std::cell::*;
 use std::collections::HashMap;
@@ -10,7 +11,6 @@ use std::rc::*;
 use std::sync::*;
 use vulkano::sync::GpuFuture;
 use vulkano::*;
-use sdl3::event::*;
 
 type ShaderLoadFn =
     fn(Arc<device::Device>) -> Result<Arc<shader::ShaderModule>, Validated<VulkanError>>;
@@ -359,16 +359,11 @@ impl VulkanRendererObject for Device {
         let physical_device_features_supported = physical_device.supported_features();
         let mut physical_device_features = device::DeviceFeatures::empty();
 
-        physical_device_features.multi_draw_indirect =
-            physical_device_features_supported.multi_draw_indirect;
         physical_device_features.sampler_anisotropy =
             physical_device_features_supported.sampler_anisotropy;
         physical_device_features.image_cube_array =
             physical_device_features_supported.image_cube_array;
 
-        if !physical_device_features.multi_draw_indirect {
-            return Err(format!("{}: MultiDrawIndirect not supported", error_object));
-        }
         if !physical_device_features.sampler_anisotropy {
             return Err(format!("{}: SamplerAnisotropy not supported", error_object));
         }
@@ -1326,7 +1321,11 @@ impl VulkanRendererObject for Swapchain {
                 image_color_space: format.1,
                 image_extent: extent,
                 image_usage: image::ImageUsage::COLOR_ATTACHMENT,
-                composite_alpha: capabilities.supported_composite_alpha.into_iter().next().unwrap(),
+                composite_alpha: capabilities
+                    .supported_composite_alpha
+                    .into_iter()
+                    .next()
+                    .unwrap(),
                 present_mode: config.present_mode.into(),
                 ..Default::default()
             },
@@ -2664,7 +2663,7 @@ impl ImGuiContext {
                 Self::handle_key(io, &key, false);
             }
 
-            _ => {},
+            _ => {}
         }
     }
 
