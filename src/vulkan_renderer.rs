@@ -356,19 +356,23 @@ impl VulkanRendererObject for Device {
 
         let physical_device = &config.physical_device.physical_device;
 
-        let physical_device_features_supported = physical_device.supported_features();
         let mut physical_device_features = device::DeviceFeatures::empty();
 
-        physical_device_features.sampler_anisotropy =
-            physical_device_features_supported.sampler_anisotropy;
-        physical_device_features.image_cube_array =
-            physical_device_features_supported.image_cube_array;
+        #[cfg(not(target_os = "android"))]
+        {
+            let physical_device_features_supported = physical_device.supported_features();
 
-        if !physical_device_features.sampler_anisotropy {
-            return Err(format!("{}: SamplerAnisotropy not supported", error_object));
-        }
-        if !physical_device_features.image_cube_array {
-            return Err(format!("{}: ImageCubeArray not supported", error_object));
+            physical_device_features.sampler_anisotropy =
+                physical_device_features_supported.sampler_anisotropy;
+            physical_device_features.image_cube_array =
+                physical_device_features_supported.image_cube_array;
+
+            if !physical_device_features.sampler_anisotropy {
+                return Err(format!("{}: SamplerAnisotropy not supported", error_object));
+            }
+            if !physical_device_features.image_cube_array {
+                return Err(format!("{}: ImageCubeArray not supported", error_object));
+            }
         }
 
         let queue_create_infos = vec![device::QueueCreateInfo {
@@ -925,7 +929,13 @@ impl VulkanRendererObject for Sampler {
                     image::sampler::SamplerAddressMode::ClampToEdge,
                 ],
                 mip_lod_bias: 0.0,
-                anisotropy: Some(current_sampler_anisotropy as f32),
+                anisotropy: if current_sampler_anisotropy > 1
+                    && device.enabled_features().sampler_anisotropy
+                {
+                    Some(current_sampler_anisotropy as f32)
+                } else {
+                    None
+                },
                 compare: None,
                 border_color: image::sampler::BorderColor::FloatOpaqueWhite,
                 ..Default::default()

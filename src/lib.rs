@@ -29,7 +29,7 @@ pub unsafe extern "C" fn SDL_main() {
         error!("PANIC: {:?}", info);
     }));
 
-    android_logger::init_once(android_logger::Config::default());
+    android_logger::init_once(android_logger::Config::default().with_max_level(LevelFilter::Trace));
 
     if let Err(err) = run_app() {
         error!("App error: {}", err);
@@ -37,7 +37,7 @@ pub unsafe extern "C" fn SDL_main() {
 }
 
 pub fn run_app() -> Result<(), String> {
-    let mut physical_renderer = PhysicalRenderer::new(800, 600).unwrap();
+    let mut physical_renderer = PhysicalRenderer::new(800, 600)?;
 
     let mut camera = Camera::new(
         glm::vec3(0.0, 0.0, 0.0),
@@ -47,7 +47,7 @@ pub fn run_app() -> Result<(), String> {
         50.0,
     );
 
-    let area = Area::new().unwrap();
+    let area = Area::new()?;
 
     let mut gui = Gui::new(area);
 
@@ -108,13 +108,11 @@ pub fn run_app() -> Result<(), String> {
         last_time = current_time;
 
         camera.update(delta_time);
-        gui.area.update_simulation(delta_time).unwrap();
+        gui.area.update_simulation(delta_time)?;
 
-        physical_renderer.update(&camera, &mut gui).unwrap();
+        physical_renderer.update(&camera, &mut gui)?;
 
-        physical_renderer
-            .render(&mut gui, &camera, delta_time)
-            .unwrap();
+        physical_renderer.render(&mut gui, &camera, delta_time)?;
     }
     Ok(())
 }

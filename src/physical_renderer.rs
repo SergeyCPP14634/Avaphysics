@@ -275,7 +275,10 @@ impl PhysicalRenderer {
         ];
 
         #[cfg(target_os = "android")]
-        sdl3::hint::set(sdl3::hint::names::ORIENTATIONS, "LandscapeLeft LandscapeRight");
+        sdl3::hint::set(
+            sdl3::hint::names::ORIENTATIONS,
+            "LandscapeLeft LandscapeRight",
+        );
 
         let sdl_context = sdl3::init().map_err(|_| "Failed to create sdl context")?;
         let video_subsystem = sdl_context
