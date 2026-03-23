@@ -70,7 +70,7 @@ impl VulkanRendererObject for Instance {
             instance::InstanceCreateInfo {
                 application_name: Some(config.app_name.clone()),
                 engine_name: Some(config.engine_name.clone()),
-                max_api_version: Some(instance::Version::V1_1),
+                max_api_version: Some(instance::Version::V1_0),
                 enabled_extensions: extensions,
                 ..Default::default()
             },
@@ -101,6 +101,11 @@ impl Instance {
             return Err("KHR_surface extension not supported".to_string());
         }
         extensions.khr_surface = true;
+
+        if !supported.khr_get_physical_device_properties2 {
+            return Err("KHR_get_physical_device_properties2 extension not supported".to_string());
+        }
+        extensions.khr_get_physical_device_properties2 = true;
 
         #[cfg(target_os = "windows")]
         {
@@ -381,19 +386,18 @@ impl VulkanRendererObject for Device {
             ..Default::default()
         }];
 
-        let swapchain_supported = physical_device.supported_extensions().khr_swapchain;
-        if !swapchain_supported {
-            return Err(format!("{}: Swapchain not supported", error_object));
-        }
+        let extensions = Self::required_extensions(&physical_device).map_err(|err| {
+            format!(
+                "{0}: Failed to get required extensions: {1}",
+                error_object, err
+            )
+        })?;
 
         let (device, mut queues) = device::Device::new(
             physical_device.clone(),
             device::DeviceCreateInfo {
                 queue_create_infos,
-                enabled_extensions: device::DeviceExtensions {
-                    khr_swapchain: true,
-                    ..Default::default()
-                },
+                enabled_extensions: extensions,
                 enabled_features: physical_device_features,
                 ..Default::default()
             },
@@ -434,6 +438,48 @@ impl VulkanRendererObject for Device {
 
     fn config(&self) -> Self::Config {
         self.config.clone()
+    }
+}
+
+impl Device {
+    fn required_extensions(
+        physical_device: &Arc<device::physical::PhysicalDevice>,
+    ) -> VulkanRendererResult<device::DeviceExtensions> {
+        let supported = physical_device.supported_extensions();
+
+        let mut extensions = device::DeviceExtensions::empty();
+
+        if !supported.khr_swapchain {
+            return Err("KHR_swapchain extension not supported".to_string());
+        }
+        extensions.khr_swapchain = true;
+
+        if !supported.khr_maintenance1 {
+            return Err("KHR_maintenance1 extension not supported".to_string());
+        }
+        extensions.khr_maintenance1 = true;
+
+        if !supported.khr_maintenance2 {
+            return Err("KHR_maintenance2 extension not supported".to_string());
+        }
+        extensions.khr_maintenance2 = true;
+
+        if !supported.khr_maintenance3 {
+            return Err("KHR_maintenance3 extension not supported".to_string());
+        }
+        extensions.khr_maintenance3 = true;
+
+        if !supported.khr_dedicated_allocation {
+            return Err("KHR_dedicated_allocation extension not supported".to_string());
+        }
+        extensions.khr_dedicated_allocation = true;
+
+        if !supported.khr_get_memory_requirements2 {
+            return Err("KHR_get_memory_requirements2 extension not supported".to_string());
+        }
+        extensions.khr_get_memory_requirements2 = true;
+
+        Ok(extensions)
     }
 }
 
