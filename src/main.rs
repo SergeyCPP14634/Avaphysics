@@ -8,6 +8,5 @@ fn main() {
 
     if let Err(err) = avaphysics::run_app() {
         error!("App error: {}", err);
-        println!("App error: {}", err);
     }
 }

@@ -3,6 +3,7 @@ extern crate sdl3;
 mod imgui_renderer;
 pub mod vulkan_logic;
 
+use log::*;
 use sdl3::event::*;
 use std::any::*;
 use std::cell::*;
@@ -951,17 +952,16 @@ impl VulkanRendererObject for Sampler {
         let physical_device = &config.physical_device.physical_device;
         let device = &config.device.device;
 
-        let mut current_sampler_anisotropy =
-            physical_device.properties().max_sampler_anisotropy as u32;
+        let max_supported = physical_device.properties().max_sampler_anisotropy as u32;
 
-        if config.sampler_anisotropy > current_sampler_anisotropy {
-            println!(
-                "{}: Sampler anisotropy exceeds sampler anisotropy {} limit",
-                error_object, current_sampler_anisotropy
+        if config.sampler_anisotropy > max_supported {
+            warn!(
+                "{}: Requested anisotropy {} exceeds hardware limit {}",
+                error_object, config.sampler_anisotropy, max_supported
             );
-        } else {
-            current_sampler_anisotropy = config.sampler_anisotropy;
         }
+
+        let current_sampler_anisotropy = config.sampler_anisotropy.min(max_supported);
 
         let sampler = image::sampler::Sampler::new(
             device.clone(),
@@ -1312,6 +1312,7 @@ pub struct SwapchainConfig {
     pub physical_device: PhysicalDevice,
     pub device: Device,
     pub present_mode: PresentMode,
+    pub image_count: u32,
     pub width: u32,
     pub height: u32,
 }
@@ -1323,6 +1324,7 @@ impl Default for SwapchainConfig {
             physical_device: PhysicalDevice::new(PhysicalDeviceConfig::default()).unwrap(),
             device: Device::new(DeviceConfig::default()).unwrap(),
             present_mode: PresentMode::Fifo,
+            image_count: 3,
             width: 0,
             height: 0,
         }
@@ -1368,11 +1370,31 @@ impl VulkanRendererObject for Swapchain {
 
         let capabilities = Self::surface_capabilities(physical_device, surface, &error_object)?;
 
+        let image_count = match capabilities.max_image_count {
+            Some(max) if config.image_count > max => {
+                warn!(
+                    "{}: Requested image count {} exceeds swapchain limit {}",
+                    error_object, config.image_count, max
+                );
+                max
+            }
+            _ => {
+                let count = config.image_count.max(capabilities.min_image_count);
+                if count != config.image_count {
+                    warn!(
+                        "{}: Requested image count {} is below minimum {}",
+                        error_object, config.image_count, capabilities.min_image_count
+                    );
+                }
+                count
+            }
+        };
+
         let swapchain = swapchain::Swapchain::new(
             device.clone(),
             surface.clone(),
             swapchain::SwapchainCreateInfo {
-                min_image_count: capabilities.min_image_count,
+                min_image_count: image_count,
                 image_format: format.0,
                 image_color_space: format.1,
                 image_extent: extent,

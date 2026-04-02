@@ -329,6 +329,7 @@ impl PhysicalRenderer {
             physical_device: physical_device.clone(),
             device: device.clone(),
             present_mode: PresentMode::Fifo,
+            image_count: 3,
             width,
             height,
         })?;

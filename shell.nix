@@ -26,6 +26,8 @@ pkgs.mkShell {
   ];
 
   LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+
+  RUSTFLAGS = "-C linker=clang";
   
   NIX_CFLAGS_COMPILE = "-isystem ${pkgs.llvmPackages.libclang.lib}/lib/clang/${pkgs.lib.getVersion pkgs.clang}/include";
   
